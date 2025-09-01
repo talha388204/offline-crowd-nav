@@ -125,33 +125,502 @@
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <script>
-        const state={map:null,userMarker:null,userPosition:null,trail:null,trailCoords:[],isTrailRecording:false,peers:JSON.parse(localStorage.getItem('peers')||'[]'),userName:localStorage.getItem('username')||'',demoMode:false,targetPeer:null};
-        function showStatus(msg,err=false){const b=document.getElementById('status-banner');b.textContent=msg;b.className=`status-banner show ${err?'error':''}`;setTimeout(()=>b.classList.remove('show'),5000)}
-        function fmt(c){return c?c.toFixed(5):'--'}
-        function calcDist(p1,p2){const R=6371000,dLat=(p2.lat-p1.lat)*Math.PI/180,dLon=(p2.lng-p1.lng)*Math.PI/180,a=Math.sin(dLat/2)**2+Math.cos(p1.lat*Math.PI/180)*Math.cos(p2.lat*Math.PI/180)*Math.sin(dLon/2)**2;return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))}
-        function calcBearing(p1,p2){const dLon=(p2.lng-p1.lng)*Math.PI/180,lat1=p1.lat*Math.PI/180,lat2=p2.lat*Math.PI/180,y=Math.sin(dLon)*Math.cos(lat2),x=Math.cos(lat1)*Math.sin(lat2)-Math.sin(lat1)*Math.cos(lat2)*Math.cos(dLon);return(Math.atan2(y,x)*180/Math.PI+360)%360}
-        function initMap(){state.map=L.map('map').setView([23.8103,90.4125],13);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(state.map);state.map.on('click',e=>{if(state.demoMode)updatePos({latitude:e.latlng.lat,longitude:e.latlng.lng,accuracy:10},true)});const saved=JSON.parse(localStorage.getItem('trail')||'[]');if(saved.length>0){state.trailCoords=saved;state.isTrailRecording=true;updateTrail()}}
-        function updatePos(coords,demo=false){state.userPosition=coords;if(!state.userMarker){state.userMarker=L.marker([coords.latitude,coords.longitude]).addTo(state.map);state.map.setView([coords.latitude,coords.longitude],16)}else{state.userMarker.setLatLng([coords.latitude,coords.longitude])}if(state.isTrailRecording){state.trailCoords.push([coords.latitude,coords.longitude]);updateTrail()}document.getElementById('lat-value').textContent=fmt(coords.latitude);document.getElementById('lng-value').textContent=fmt(coords.longitude);document.getElementById('accuracy-value').textContent=demo?'Demo':(coords.accuracy?Math.round(coords.accuracy):'--');if(state.targetPeer)updateCompass()}
-        function updateTrail(){if(state.trail)state.map.removeLayer(state.trail);if(state.trailCoords.length>1)state.trail=L.polyline(state.trailCoords,{color:'#35c98b',weight:3}).addTo(state.map);localStorage.setItem('trail',JSON.stringify(state.trailCoords));document.querySelector('[onclick="toggleTrail()"]').textContent=state.isTrailRecording?'⏹️ Stop':'🛤️ Trail'}
-        function updateCompass(){if(!state.userPosition||!state.targetPeer){document.getElementById('compass-text').textContent='No target';return}const userPos={lat:state.userPosition.latitude,lng:state.userPosition.longitude},peerPos={lat:state.targetPeer.lat,lng:state.targetPeer.lng},dist=calcDist(userPos,peerPos),bearing=calcBearing(userPos,peerPos);document.getElementById('compass-needle').style.transform=`rotate(${bearing}deg)`;document.getElementById('compass-text').textContent=`${state.targetPeer.name||'Peer'} - ${dist<1000?Math.round(dist)+'m':(dist/1000).toFixed(1)+'km'}`}
-        function startGPS(){if(!navigator.geolocation){showStatus('GPS not supported',true);return}navigator.geolocation.watchPosition(pos=>updatePos(pos.coords),err=>showStatus('GPS denied. Use Demo Mode.',true),{enableHighAccuracy:true,timeout:10000,maximumAge:60000})}
-        function savePeers(){localStorage.setItem('peers',JSON.stringify(state.peers));renderPeers()}
-        function renderPeers(){const c=document.getElementById('peer-list');document.getElementById('peer-count').textContent=state.peers.length;if(!state.peers.length){c.innerHTML='<div style="text-align:center;color:var(--muted)">No peers yet. Scan QR to add.</div>';return}c.innerHTML=state.peers.map((p,i)=>`<div class="peer-item" onclick="selectPeer(${i})"><div class="peer-name">${p.name||'Anonymous'}</div><div class="peer-info">${fmt(p.lat)}, ${fmt(p.lng)}<br>${new Date(p.timestamp).toLocaleString()}</div></div>`).join('')}
-        function selectPeer(i){state.targetPeer=state.peers[i];updateCompass();state.map.setView([state.targetPeer.lat,state.targetPeer.lng],16);if(!state.targetPeer.marker)state.targetPeer.marker=L.marker([state.targetPeer.lat,state.targetPeer.lng]).addTo(state.map)}
-        function addPeer(data){const idx=state.peers.findIndex(p=>p.id===data.id);if(idx>=0)state.peers[idx]={...state.peers[idx],...data};else state.peers.unshift(data);savePeers();selectPeer(idx>=0?idx:0)}
-        function shareLocation(){if(!state.userPosition){showStatus('No location. Use GPS or Demo.',true);return}const data={type:'location',id:Date.now()+'',name:state.userName||'Anonymous',lat:state.userPosition.latitude,lng:state.userPosition.longitude,timestamp:Date.now()};showModal('Share Location','<div class="qr-container"><canvas id="qr-canvas"></canvas></div><p style="text-align:center;color:var(--muted);margin-top:1rem">Others can scan this QR code.</p>');QRCode.toCanvas(document.getElementById('qr-canvas'),JSON.stringify(data),{width:256,margin:2})}
-        function sosAlert(){if(!state.userPosition){showStatus('No location for SOS.',true);return}const data={type:'sos',id:Date.now()+'',name:state.userName||'Anonymous',lat:state.userPosition.latitude,lng:state.userPosition.longitude,timestamp:Date.now()};showModal('🚨 SOS Alert','<div class="qr-container"><canvas id="qr-canvas"></canvas></div><p style="text-align:center;color:var(--danger);margin-top:1rem;font-weight:bold">EMERGENCY: Show this QR for help.</p>');QRCode.toCanvas(document.getElementById('qr-canvas'),JSON.stringify(data),{width:256,margin:2})}
-        function scanQR(){if(!navigator.mediaDevices){showStatus('Camera not available',true);return}showModal('Scan QR Code','<video id="video" autoplay playsinline></video><p style="text-align:center;color:var(--muted);margin-top:1rem">Point camera at QR code.</p>');const video=document.getElementById('video'),canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}}).then(stream=>{video.srcObject=stream;video.play();function scan(){if(video.readyState===video.HAVE_ENOUGH_DATA){canvas.width=video.videoWidth;canvas.height=video.videoHeight;ctx.drawImage(video,0,0,canvas.width,canvas.height);const imgData=ctx.getImageData(0,0,canvas.width,canvas.height),code=jsQR(imgData.data,canvas.width,canvas.height);if(code){try{const data=JSON.parse(code.data);handleQR(data);stream.getTracks().forEach(t=>t.stop());closeModal();return}catch(e){}}}requestAnimationFrame(scan)}scan()}).catch(()=>{showStatus('Camera denied',true);closeModal()})}
-        function handleQR(data){if(data.type==='location'){addPeer(data);showStatus(`Added: ${data.name||'Anonymous'}`)}else if(data.type==='sos'){addPeer(data);showStatus(`🚨 SOS from ${data.name||'Someone'}!`,true);alert(`🚨 EMERGENCY\n${data.name||'Someone'} needs help!\nLocation: ${fmt(data.lat)}, ${fmt(data.lng)}`)}else showStatus('Unknown QR',true)}
-        function showModal(title,content){document.getElementById('modal-title').textContent=title;document.getElementById('modal-body').innerHTML=content;document.getElementById('modal').classList.add('show')}
-        function closeModal(){document.getElementById('modal').classList.remove('show')}
-        function saveName(){const name=document.getElementById('username').value.trim();state.userName=name;localStorage.setItem('username',name);showStatus('Name saved!')}
-        function toggleDemo(){state.demoMode=!state.demoMode;document.querySelector('[onclick="toggleDemo()"]').textContent=state.demoMode?'🎮 Demo ON':'Demo Mode';showStatus(state.demoMode?'Demo: Click map to set location':'Demo mode off')}
-        function dropBreadcrumb(){if(!state.userPosition){showStatus('No location',true);return}L.circleMarker([state.userPosition.latitude,state.userPosition.longitude],{radius:6,color:'#35c98b'}).addTo(state.map);showStatus('Breadcrumb dropped')}
-        function toggleTrail(){if(!state.userPosition&&!state.isTrailRecording){showStatus('No location',true);return}state.isTrailRecording=!state.isTrailRecording;if(state.isTrailRecording&&!state.trailCoords.length&&state.userPosition)state.trailCoords.push([state.userPosition.latitude,state.userPosition.longitude]);updateTrail();if(!state.isTrailRecording)localStorage.removeItem('trail')}
-        function clearData(){if(confirm('Clear all data?')){localStorage.clear();state.peers=[];state.trailCoords=[];state.userName='';if(state.trail)state.map.removeLayer(state.trail);renderPeers();showStatus('Data cleared')}}
-        function setupPWA(){const manifest={name:'Offline Crowd Navigation',short_name:'CrowdNav',start_url:'./',display:'standalone',background_color:'#0b1220',theme_color:'#35c98b',icons:[{src:'data:image/svg+xml;base64,'+btoa('<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192"><rect width="100%" height="100%" rx="32" fill="#13233b"/><text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" font-size="110">🧭</text></svg>'),sizes:'192x192',type:'image/svg+xml'}]};const link=document.createElement('link');link.rel='manifest';link.href=URL.createObjectURL(new Blob([JSON.stringify(manifest)],{type:'application/json'}));document.head.appendChild(link);if('serviceWorker'in navigator&&window.isSecureContext){const sw=`const CACHE='nav-v1';self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(['./','https://unpkg.com/leaflet@1.9.4/dist/leaflet.css','https://unpkg.com/leaflet@1.9.4/dist/leaflet.js','https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js','https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js']))));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request))));`;navigator.serviceWorker.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(console.warn)}}
-        document.addEventListener('DOMContentLoaded',()=>{initMap();renderPeers();document.getElementById('username').value=state.userName;setupPWA();if(window.isSecureContext&&!state.demoMode)startGPS()});
+        // Global state
+        const state = {
+            map: null,
+            userMarker: null,
+            userPosition: null,
+            trail: null,
+            trailCoords: [],
+            isTrailRecording: false,
+            peers: JSON.parse(localStorage.getItem('peers') || '[]'),
+            userName: localStorage.getItem('username') || '',
+            demoMode: false,
+            targetPeer: null
+        };
+
+        // Utility functions
+        function showStatus(msg, err = false) {
+            const banner = document.getElementById('status-banner');
+            banner.textContent = msg;
+            banner.className = `status-banner show ${err ? 'error' : ''}`;
+            setTimeout(() => banner.classList.remove('show'), 5000);
+        }
+
+        function fmt(c) {
+            return c ? c.toFixed(5) : '--';
+        }
+
+        function calcDist(p1, p2) {
+            const R = 6371000;
+            const dLat = (p2.lat - p1.lat) * Math.PI / 180;
+            const dLon = (p2.lng - p1.lng) * Math.PI / 180;
+            const a = Math.sin(dLat / 2) ** 2 + Math.cos(p1.lat * Math.PI / 180) * Math.cos(p2.lat * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+            return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        }
+
+        function calcBearing(p1, p2) {
+            const dLon = (p2.lng - p1.lng) * Math.PI / 180;
+            const lat1 = p1.lat * Math.PI / 180;
+            const lat2 = p2.lat * Math.PI / 180;
+            const y = Math.sin(dLon) * Math.cos(lat2);
+            const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+            return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+        }
+
+        // Map initialization
+        function initMap() {
+            state.map = L.map('map').setView([23.8103, 90.4125], 13);
+            L.tileLayer('/images/OpenStreetMap.jpg', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap'
+            }).addTo(state.map);
+
+            // Demo mode click handler
+            state.map.on('click', function(e) {
+                if (state.demoMode) {
+                    updatePos({
+                        latitude: e.latlng.lat,
+                        longitude: e.latlng.lng,
+                        accuracy: 10
+                    }, true);
+                }
+            });
+
+            // Load saved trail
+            const saved = JSON.parse(localStorage.getItem('trail') || '[]');
+            if (saved.length > 0) {
+                state.trailCoords = saved;
+                state.isTrailRecording = true;
+                updateTrail();
+            }
+        }
+
+        // Position update
+        function updatePos(coords, demo = false) {
+            state.userPosition = coords;
+            
+            if (!state.userMarker) {
+                state.userMarker = L.marker([coords.latitude, coords.longitude], {
+                    title: 'Your Location'
+                }).addTo(state.map);
+                state.map.setView([coords.latitude, coords.longitude], 16);
+            } else {
+                state.userMarker.setLatLng([coords.latitude, coords.longitude]);
+            }
+
+            if (state.isTrailRecording) {
+                state.trailCoords.push([coords.latitude, coords.longitude]);
+                updateTrail();
+            }
+
+            document.getElementById('lat-value').textContent = fmt(coords.latitude);
+            document.getElementById('lng-value').textContent = fmt(coords.longitude);
+            document.getElementById('accuracy-value').textContent = demo ? 'Demo' : (coords.accuracy ? Math.round(coords.accuracy) : '--');
+
+            if (state.targetPeer) updateCompass();
+        }
+
+        // Trail management
+        function updateTrail() {
+            if (state.trail) state.map.removeLayer(state.trail);
+            if (state.trailCoords.length > 1) {
+                state.trail = L.polyline(state.trailCoords, {
+                    color: '#35c98b',
+                    weight: 3
+                }).addTo(state.map);
+            }
+            localStorage.setItem('trail', JSON.stringify(state.trailCoords));
+            document.querySelector('[onclick="toggleTrail()"]').textContent = state.isTrailRecording ? '⏹️ Stop' : '🛤️ Trail';
+        }
+
+        // Compass update
+        function updateCompass() {
+            if (!state.userPosition || !state.targetPeer) {
+                document.getElementById('compass-text').textContent = 'No target';
+                return;
+            }
+
+            const userPos = { lat: state.userPosition.latitude, lng: state.userPosition.longitude };
+            const peerPos = { lat: state.targetPeer.lat, lng: state.targetPeer.lng };
+            const dist = calcDist(userPos, peerPos);
+            const bearing = calcBearing(userPos, peerPos);
+
+            document.getElementById('compass-needle').style.transform = `rotate(${bearing}deg)`;
+            document.getElementById('compass-text').textContent = `${state.targetPeer.name || 'Peer'} - ${dist < 1000 ? Math.round(dist) + 'm' : (dist / 1000).toFixed(1) + 'km'}`;
+        }
+
+        // GPS functionality
+        function startGPS() {
+            if (!navigator.geolocation) {
+                showStatus('GPS not supported', true);
+                return;
+            }
+
+            showStatus('Requesting location permission...');
+            
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    updatePos(position.coords);
+                    showStatus('Location found!');
+                    
+                    // Start watching position
+                    navigator.geolocation.watchPosition(
+                        (pos) => updatePos(pos.coords),
+                        (err) => console.warn('GPS watch error:', err),
+                        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+                    );
+                },
+                (error) => {
+                    console.error('Geolocation error:', error);
+                    showStatus('Location denied. Use Demo Mode to click on map.', true);
+                },
+                { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+            );
+        }
+
+        // Peer management
+        function savePeers() {
+            localStorage.setItem('peers', JSON.stringify(state.peers));
+            renderPeers();
+        }
+
+        function renderPeers() {
+            const container = document.getElementById('peer-list');
+            document.getElementById('peer-count').textContent = state.peers.length;
+
+            if (!state.peers.length) {
+                container.innerHTML = '<div style="text-align:center;color:var(--muted)">No peers yet. Scan QR to add.</div>';
+                return;
+            }
+
+            container.innerHTML = state.peers.map((p, i) => `
+                <div class="peer-item" onclick="selectPeer(${i})">
+                    <div class="peer-name">${p.name || 'Anonymous'}</div>
+                    <div class="peer-info">${fmt(p.lat)}, ${fmt(p.lng)}<br>${new Date(p.timestamp).toLocaleString()}</div>
+                </div>
+            `).join('');
+        }
+
+        function selectPeer(i) {
+            state.targetPeer = state.peers[i];
+            updateCompass();
+            state.map.setView([state.targetPeer.lat, state.targetPeer.lng], 16);
+            
+            if (!state.targetPeer.marker) {
+                state.targetPeer.marker = L.marker([state.targetPeer.lat, state.targetPeer.lng], {
+                    title: state.targetPeer.name || 'Peer'
+                }).addTo(state.map);
+            }
+        }
+
+        function addPeer(data) {
+            const idx = state.peers.findIndex(p => p.id === data.id);
+            if (idx >= 0) {
+                state.peers[idx] = { ...state.peers[idx], ...data };
+            } else {
+                state.peers.unshift(data);
+            }
+            savePeers();
+            selectPeer(idx >= 0 ? idx : 0);
+        }
+
+        // QR Code functions
+        function shareLocation() {
+            if (!state.userPosition) {
+                showStatus('No location available. Enable GPS or use Demo Mode.', true);
+                return;
+            }
+
+            const data = {
+                type: 'location',
+                id: Date.now() + '',
+                name: state.userName || 'Anonymous',
+                lat: state.userPosition.latitude,
+                lng: state.userPosition.longitude,
+                timestamp: Date.now()
+            };
+
+            showModal('Share Location', `
+                <div class="qr-container">
+                    <canvas id="qr-canvas" width="256" height="256"></canvas>
+                </div>
+                <p style="text-align:center;color:var(--muted);margin-top:1rem">
+                    Others can scan this QR code to get your location.
+                </p>
+            `);
+
+            // Generate QR code after modal is shown
+            setTimeout(() => {
+                const canvas = document.getElementById('qr-canvas');
+                if (canvas && window.QRCode) {
+                    QRCode.toCanvas(canvas, JSON.stringify(data), {
+                        width: 256,
+                        margin: 2,
+                        color: {
+                            dark: '#35c98b',
+                            light: '#0d182b'
+                        }
+                    }, (error) => {
+                        if (error) {
+                            console.error('QR generation error:', error);
+                            showStatus('QR code generation failed', true);
+                        }
+                    });
+                } else {
+                    showStatus('QR library not loaded', true);
+                }
+            }, 100);
+        }
+
+        function sosAlert() {
+            if (!state.userPosition) {
+                showStatus('No location for SOS.', true);
+                return;
+            }
+
+            const data = {
+                type: 'sos',
+                id: Date.now() + '',
+                name: state.userName || 'Anonymous',
+                lat: state.userPosition.latitude,
+                lng: state.userPosition.longitude,
+                timestamp: Date.now()
+            };
+
+            showModal('🚨 SOS Alert', `
+                <div class="qr-container">
+                    <canvas id="qr-canvas" width="256" height="256"></canvas>
+                </div>
+                <p style="text-align:center;color:var(--danger);margin-top:1rem;font-weight:bold">
+                    EMERGENCY: Show this QR code for help.
+                </p>
+            `);
+
+            setTimeout(() => {
+                const canvas = document.getElementById('qr-canvas');
+                if (canvas && window.QRCode) {
+                    QRCode.toCanvas(canvas, JSON.stringify(data), {
+                        width: 256,
+                        margin: 2,
+                        color: {
+                            dark: '#ff6b6b',
+                            light: '#0d182b'
+                        }
+                    });
+                }
+            }, 100);
+        }
+
+        function scanQR() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                showStatus('Camera not available', true);
+                return;
+            }
+
+            showModal('Scan QR Code', `
+                <video id="video" autoplay playsinline style="width:100%;border-radius:8px"></video>
+                <p style="text-align:center;color:var(--muted);margin-top:1rem">
+                    Point camera at QR code to scan.
+                </p>
+            `);
+
+            const video = document.getElementById('video');
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment' }
+            }).then(stream => {
+                video.srcObject = stream;
+                video.play();
+
+                function scan() {
+                    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        
+                        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                        
+                        if (window.jsQR) {
+                            const code = jsQR(imgData.data, canvas.width, canvas.height);
+                            if (code) {
+                                try {
+                                    const data = JSON.parse(code.data);
+                                    handleQR(data);
+                                    stream.getTracks().forEach(t => t.stop());
+                                    closeModal();
+                                    return;
+                                } catch (e) {
+                                    console.warn('Invalid QR data:', e);
+                                }
+                            }
+                        }
+                    }
+                    requestAnimationFrame(scan);
+                }
+                scan();
+            }).catch(err => {
+                console.error('Camera error:', err);
+                showStatus('Camera access denied', true);
+                closeModal();
+            });
+        }
+
+        function handleQR(data) {
+            if (data.type === 'location') {
+                addPeer(data);
+                showStatus(`Added peer: ${data.name || 'Anonymous'}`);
+            } else if (data.type === 'sos') {
+                addPeer(data);
+                showStatus(`🚨 SOS from ${data.name || 'Someone'}!`, true);
+                alert(`🚨 EMERGENCY ALERT\n\n${data.name || 'Someone'} needs help!\nLocation: ${fmt(data.lat)}, ${fmt(data.lng)}`);
+            } else {
+                showStatus('Unknown QR code format', true);
+            }
+        }
+
+        // Modal functions
+        function showModal(title, content) {
+            document.getElementById('modal-title').textContent = title;
+            document.getElementById('modal-body').innerHTML = content;
+            document.getElementById('modal').classList.add('show');
+        }
+
+        function closeModal() {
+            document.getElementById('modal').classList.remove('show');
+        }
+
+        // Button handlers
+        function saveName() {
+            const name = document.getElementById('username').value.trim();
+            state.userName = name;
+            localStorage.setItem('username', name);
+            showStatus('Name saved!');
+        }
+
+        function toggleDemo() {
+            state.demoMode = !state.demoMode;
+            document.querySelector('[onclick="toggleDemo()"]').textContent = state.demoMode ? '🎮 Demo ON' : 'Demo Mode';
+            showStatus(state.demoMode ? 'Demo Mode: Click map to set location' : 'Demo mode off');
+        }
+
+        function dropBreadcrumb() {
+            if (!state.userPosition) {
+                showStatus('No location available', true);
+                return;
+            }
+            L.circleMarker([state.userPosition.latitude, state.userPosition.longitude], {
+                radius: 6,
+                color: '#35c98b',
+                fillColor: '#35c98b',
+                fillOpacity: 0.8
+            }).addTo(state.map);
+            showStatus('Breadcrumb dropped');
+        }
+
+        function toggleTrail() {
+            if (!state.userPosition && !state.isTrailRecording) {
+                showStatus('No location available', true);
+                return;
+            }
+
+            state.isTrailRecording = !state.isTrailRecording;
+            
+            if (state.isTrailRecording && !state.trailCoords.length && state.userPosition) {
+                state.trailCoords.push([state.userPosition.latitude, state.userPosition.longitude]);
+            }
+            
+            updateTrail();
+            
+            if (!state.isTrailRecording) {
+                localStorage.removeItem('trail');
+            }
+        }
+
+        function clearData() {
+            if (confirm('Clear all saved data?')) {
+                localStorage.clear();
+                state.peers = [];
+                state.trailCoords = [];
+                state.userName = '';
+                if (state.trail) state.map.removeLayer(state.trail);
+                renderPeers();
+                document.getElementById('username').value = '';
+                showStatus('All data cleared');
+            }
+        }
+
+        // PWA Setup
+        function setupPWA() {
+            const manifest = {
+                name: 'Offline Crowd Navigation',
+                short_name: 'CrowdNav',
+                start_url: './',
+                display: 'standalone',
+                background_color: '#0b1220',
+                theme_color: '#35c98b',
+                icons: [{
+                    src: 'data:image/svg+xml;base64,' + btoa(`
+                        <svg xmlns="http://www.w3.org/2000/svg" width="192" height="192">
+                            <rect width="100%" height="100%" rx="32" fill="#13233b"/>
+                            <text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" font-size="110">🧭</text>
+                        </svg>
+                    `),
+                    sizes: '192x192',
+                    type: 'image/svg+xml'
+                }]
+            };
+
+            const link = document.createElement('link');
+            link.rel = 'manifest';
+            link.href = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: 'application/json' }));
+            document.head.appendChild(link);
+
+            // Service Worker
+            if ('serviceWorker' in navigator && window.isSecureContext) {
+                const sw = `
+                    const CACHE = 'nav-v1';
+                    self.addEventListener('install', e => 
+                        e.waitUntil(caches.open(CACHE).then(c => 
+                            c.addAll([
+                                './',
+                                'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
+                                'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+                                'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js',
+                                'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js'
+                            ])
+                        ))
+                    );
+                    self.addEventListener('fetch', e => 
+                        e.respondWith(caches.match(e.request).then(r => r || fetch(e.request)))
+                    );
+                `;
+                navigator.serviceWorker.register(
+                    URL.createObjectURL(new Blob([sw], { type: 'text/javascript' }))
+                ).catch(console.warn);
+            }
+        }
+
+        // Initialize app
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('App initializing...');
+            
+            initMap();
+            renderPeers();
+            document.getElementById('username').value = state.userName;
+            setupPWA();
+            
+            // Auto-start GPS on secure contexts
+            if (window.isSecureContext && !state.demoMode) {
+                setTimeout(startGPS, 1000);
+            } else {
+                showStatus('Click Demo Mode and then click on map to set location');
+            }
+            
+            console.log('App initialized successfully');
+        });
     </script>
 </body>
 </html>
