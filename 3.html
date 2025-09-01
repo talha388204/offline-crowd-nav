@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Offline Crowd Navigation</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js"></script>
+    <script src="https://unpkg.com/qr-scanner@1.4.2/qr-scanner.umd.min.js"></script>
+    
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1e293b; color: white; overflow: hidden; }
+        .header { background: rgba(15, 23, 42, 0.95); padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(148, 163, 184, 0.2); z-index: 1000; }
+        .header h1 { font-size: 18px; font-weight: 600; }
+        .status { display: flex; gap: 12px; align-items: center; font-size: 12px; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+        .status-dot.online { background: #10b981; }
+        .status-dot.offline { background: #ef4444; }
+        .status-dot.gps { background: #3b82f6; }
+        #map { width: 100vw; height: calc(100vh - 60px); }
+        .controls { position: fixed; top: 80px; right: 16px; z-index: 1000; background: rgba(15, 23, 42, 0.95); border-radius: 12px; padding: 16px; border: 1px solid rgba(148, 163, 184, 0.2); min-width: 200px; }
+        .btn { background: #3b82f6; color: white; border: none; padding: 8px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; width: 100%; margin-bottom: 8px; }
+        .btn:hover { background: #2563eb; }
+        .btn.danger { background: #ef4444; }
+        .btn.success { background: #10b981; }
+        .btn.secondary { background: #6b7280; }
+        input, select { width: 100%; padding: 6px 8px; border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 4px; background: rgba(30, 41, 59, 0.5); color: white; font-size: 12px; margin-bottom: 8px; }
+        .compass { width: 60px; height: 60px; border: 2px solid #3b82f6; border-radius: 50%; position: relative; margin: 8px auto; }
+        .needle { position: absolute; top: 50%; left: 50%; width: 2px; height: 20px; background: #ef4444; transform-origin: bottom; transform: translate(-50%, -100%) rotate(0deg); transition: transform 0.3s; }
+        .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; z-index: 2000; }
+        .modal.active { display: flex; }
+        .modal-content { background: #1e293b; border-radius: 12px; padding: 20px; max-width: 90%; text-align: center; }
+        .qr-canvas { margin: 16px 0; }
+        #qr-reader { width: 300px; height: 200px; margin: 16px auto; }
+        .peer-item { background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 6px; padding: 8px; margin-bottom: 6px; cursor: pointer; }
+        .peer-item:hover { background: rgba(59, 130, 246, 0.2); }
+        .peer-item.selected { background: rgba(59, 130, 246, 0.3); }
+        .notification { position: fixed; top: 80px; left: 16px; background: rgba(15, 23, 42, 0.95); border-radius: 8px; padding: 12px; z-index: 1500; transform: translateX(-100%); transition: transform 0.3s; }
+        .notification.show { transform: translateX(0); }
+        .notification.success { border-left: 4px solid #10b981; }
+        .notification.error { border-left: 4px solid #ef4444; }
+        .notification.info { border-left: 4px solid #3b82f6; }
+        @media (max-width: 768px) { .controls { position: fixed; bottom: 16px; left: 16px; right: 16px; top: auto; } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🧭 Crowd Navigation</h1>
+        <div class="status">
+            <span>GPS: <span class="status-dot offline" id="gps-status"></span></span>
+            <span>Map: <span class="status-dot offline" id="map-status"></span></span>
+            <span id="location-info">Loading...</span>
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <div class="controls">
+        <h3>🛰️ GPS & Trail</h3>
+        <input type="text" id="user-name" placeholder="Your name">
+        <button class="btn" onclick="saveName()">Save Name</button>
+        <button class="btn secondary" id="trail-btn" onclick="toggleTrail()">Start Trail</button>
+        <button class="btn secondary" onclick="dropBreadcrumb()">Drop Breadcrumb</button>
+        <button class="btn secondary" onclick="clearTrail()">Clear Trail</button>
+        
+        <h3>📱 QR Sharing</h3>
+        <button class="btn success" onclick="shareLocationQR()">Share Location</button>
+        <button class="btn" onclick="scanPeerQR()">Scan Peer QR</button>
+        <button class="btn danger" onclick="showSOSQR()">SOS QR</button>
+        
+        <h3>🧭 Navigation</h3>
+        <div class="compass">
+            <div class="needle" id="needle"></div>
+        </div>
+        <div id="distance-info" style="font-size: 11px; text-align: center; margin-bottom: 8px;">Select peer</div>
+        <button class="btn secondary" onclick="showPeerList()">Select Peer</button>
+        <button class="btn secondary" onclick="centerOnUser()">Center on Me</button>
+    </div>
+
+    <div id="qr-modal" class="modal">
+        <div class="modal-content">
+            <h3 id="qr-title">QR Code</h3>
+            <canvas id="qr-canvas" class="qr-canvas"></canvas>
+            <p id="qr-description"></p>
+            <button class="btn secondary" onclick="closeModal('qr-modal')">Close</button>
+        </div>
+    </div>
+
+    <div id="scanner-modal" class="modal">
+        <div class="modal-content">
+            <h3>Scan QR Code</h3>
+            <div id="qr-reader"></div>
+            <button class="btn secondary" onclick="closeScanner()">Cancel</button>
+        </div>
+    </div>
+
+    <div id="peer-modal" class="modal">
+        <div class="modal-content">
+            <h3>Select Peer</h3>
+            <div id="peer-list" style="max-height: 200px; overflow-y: auto;"></div>
+            <button class="btn secondary" onclick="closeModal('peer-modal')">Close</button>
+        </div>
+    </div>
+
+    <div id="notification" class="notification"></div>
+
+    <script>
+        // PWA Setup
+        const manifest = {name: "Offline Crowd Navigation", short_name: "CrowdNav", start_url: "./", display: "standalone", theme_color: "#2563eb", background_color: "#1e293b", icons: [{src: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>", sizes: "192x192", type: "image/svg+xml"}]};
+        const manifestBlob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
+        const link = document.createElement('link');
+        link.rel = 'manifest';
+        link.href = URL.createObjectURL(manifestBlob);
+        document.head.appendChild(link);
+
+        if ('serviceWorker' in navigator) {
+            const swCode = `const CACHE_NAME = 'crowd-nav-v1'; const urlsToCache = ['./', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', 'https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js', 'https://unpkg.com/qr-scanner@1.4.2/qr-scanner.umd.min.js']; self.addEventListener('install', e => e.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache)))); self.addEventListener('fetch', e => e.respondWith(caches.match(e.request).then(response => response || fetch(e.request))));`;
+            navigator.serviceWorker.register(URL.createObjectURL(new Blob([swCode], {type: 'application/javascript'})));
+        }
+
+        // Global Variables
+        let map, userMarker, userLocation = null, watchId = null;
+        let trailRecording = false, trailPath = [], trailPolyline = null;
+        let breadcrumbs = [], breadcrumbMarkers = [];
+        let peers = JSON.parse(localStorage.getItem('crowd-nav-peers') || '[]');
+        let selectedPeer = null, qrScanner = null;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                await initMap();
+                await startGPS();
+                loadSavedData();
+                showNotification('App ready!', 'success');
+            } catch (error) {
+                showNotification('Init failed: ' + error.message, 'error');
+            }
+        });
+
+        async function initMap() {
+            map = L.map('map').setView([23.8103, 90.4125], 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution: '© OpenStreetMap'}).addTo(map);
+            document.getElementById('map-status').className = 'status-dot online';
+        }
+
+        async function startGPS() {
+            if (!navigator.geolocation) throw new Error('GPS not supported');
+            const options = {enableHighAccuracy: true, timeout: 10000, maximumAge: 5000};
+            const position = await new Promise((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(resolve, reject, options);
+            });
+            onLocationFound({latlng: {lat: position.coords.latitude, lng: position.coords.longitude}, accuracy: position.coords.accuracy});
+            watchId = navigator.geolocation.watchPosition(pos => {
+                onLocationFound({latlng: {lat: pos.coords.latitude, lng: pos.coords.longitude}, accuracy: pos.coords.accuracy});
+            }, onLocationError, options);
+            document.getElementById('gps-status').className = 'status-dot gps';
+        }
+
+        function onLocationFound(e) {
+            userLocation = e.latlng;
+            document.getElementById('location-info').textContent = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`;
+            if (userMarker) {
+                userMarker.setLatLng(e.latlng);
+            } else {
+                userMarker = L.marker(e.latlng, {
+                    icon: L.divIcon({
+                        html: '<div style="background: #3b82f6; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>',
+                        iconSize: [16, 16], iconAnchor: [8, 8]
+                    })
+                }).addTo(map);
+                map.setView(e.latlng, 15);
+            }
+            if (trailRecording) recordTrail(e.latlng);
+            if (selectedPeer) updateCompass();
+            localStorage.setItem('crowd-nav-location', JSON.stringify({lat: e.latlng.lat, lng: e.latlng.lng, time: Date.now()}));
+        }
+
+        function onLocationError(e) {
+            document.getElementById('gps-status').className = 'status-dot offline';
+            showNotification('GPS Error: ' + e.message, 'error');
+        }
+
+        function loadSavedData() {
+            const savedName = localStorage.getItem('crowd-nav-name');
+            if (savedName) document.getElementById('user-name').value = savedName;
+            
+            const savedTrail = localStorage.getItem('crowd-nav-trail');
+            if (savedTrail) {
+                trailPath = JSON.parse(savedTrail);
+                if (trailPath.length > 0) {
+                    trailPolyline = L.polyline(trailPath, {color: '#ef4444', weight: 3}).addTo(map);
+                }
+            }
+            
+            const savedBreadcrumbs = localStorage.getItem('crowd-nav-breadcrumbs');
+            if (savedBreadcrumbs) {
+                breadcrumbs = JSON.parse(savedBreadcrumbs);
+                breadcrumbs.forEach(b => {
+                    const marker = L.marker([b.lat, b.lng], {
+                        icon: L.divIcon({
+                            html: '<div style="background: #10b981; width: 8px; height: 8px; border-radius: 50%; border: 1px solid white;"></div>',
+                            iconSize: [10, 10], iconAnchor: [5, 5]
+                        })
+                    }).addTo(map);
+                    marker.bindPopup(`${b.name}<br>${new Date(b.time).toLocaleTimeString()}`);
+                    breadcrumbMarkers.push(marker);
+                });
+            }
+        }
+
+        function saveName() {
+            const name = document.getElementById('user-name').value.trim();
+            if (name) {
+                localStorage.setItem('crowd-nav-name', name);
+                showNotification('Name saved!', 'success');
+            }
+        }
+
+        function toggleTrail() {
+            const btn = document.getElementById('trail-btn');
+            if (trailRecording) {
+                trailRecording = false;
+                btn.textContent = 'Start Trail';
+                btn.className = 'btn secondary';
+                showNotification('Trail stopped', 'info');
+            } else {
+                trailRecording = true;
+                trailPath = [];
+                btn.textContent = 'Stop Trail';
+                btn.className = 'btn danger';
+                showNotification('Trail started', 'success');
+            }
+        }
+
+        function recordTrail(latlng) {
+            trailPath.push([latlng.lat, latlng.lng]);
+            if (trailPolyline) map.removeLayer(trailPolyline);
+            trailPolyline = L.polyline(trailPath, {color: '#ef4444', weight: 3}).addTo(map);
+            localStorage.setItem('crowd-nav-trail', JSON.stringify(trailPath));
+        }
+
+        function clearTrail() {
+            trailPath = [];
+            if (trailPolyline) {
+                map.removeLayer(trailPolyline);
+                trailPolyline = null;
+            }
+            localStorage.removeItem('crowd-nav-trail');
+            showNotification('Trail cleared', 'info');
+        }
+
+        function dropBreadcrumb() {
+            if (!userLocation) return showNotification('No GPS location', 'error');
+            const breadcrumb = {id: Date.now(), lat: userLocation.lat, lng: userLocation.lng, time: Date.now(), name: `Point ${breadcrumbs.length + 1}`};
+            breadcrumbs.push(breadcrumb);
+            const marker = L.marker([breadcrumb.lat, breadcrumb.lng], {
+                icon: L.divIcon({
+                    html: '<div style="background: #10b981; width: 8px; height: 8px; border-radius: 50%; border: 1px solid white;"></div>',
+                    iconSize: [10, 10], iconAnchor: [5, 5]
+                })
+            }).addTo(map);
+            marker.bindPopup(`${breadcrumb.name}<br>${new Date(breadcrumb.time).toLocaleTimeString()}`);
+            breadcrumbMarkers.push(marker);
+            localStorage.setItem('crowd-nav-breadcrumbs', JSON.stringify(breadcrumbs));
+            showNotification('Breadcrumb dropped', 'success');
+        }
+
+        async function shareLocationQR() {
+            if (!userLocation) return showNotification('No GPS location', 'error');
+            const name = localStorage.getItem('crowd-nav-name') || 'Anonymous';
+            const data = {type: 'location', name, lat: userLocation.lat, lng: userLocation.lng, time: Date.now()};
+            try {
+                await QRCode.toCanvas(document.getElementById('qr-canvas'), JSON.stringify(data), {width: 200});
+                document.getElementById('qr-title').textContent = 'Share Location';
+                document.getElementById('qr-description').textContent = `${name} - ${userLocation.lat.toFixed(6)}, ${userLocation.lng.toFixed(6)}`;
+                showModal('qr-modal');
+            } catch (e) {
+                showNotification('QR generation failed', 'error');
+            }
+        }
+
+        async function showSOSQR() {
+            if (!userLocation) return showNotification('No GPS location', 'error');
+            const name = localStorage.getItem('crowd-nav-name') || 'Anonymous';
+            const data = {type: 'sos', name, lat: userLocation.lat, lng: userLocation.lng, time: Date.now(), message: 'EMERGENCY!'};
+            try {
+                await QRCode.toCanvas(document.getElementById('qr-canvas'), JSON.stringify(data), {width: 250, color: {dark: '#dc2626'}});
+                document.getElementById('qr-title').textContent = '🚨 SOS Emergency';
+                document.getElementById('qr-description').textContent = `${name} needs help!`;
+                showModal('qr-modal');
+            } catch (e) {
+                showNotification('SOS QR failed', 'error');
+            }
+        }
+
+        function scanPeerQR() {
+            showModal('scanner-modal');
+            qrScanner = new QrScanner(document.getElementById('qr-reader'), result => {
+                try {
+                    const data = JSON.parse(result);
+                    if (data.type === 'location' || data.type === 'sos') {
+                        addPeer(data);
+                        closeScanner();
+                        showNotification(`Added: ${data.name}`, 'success');
+                    }
+                } catch (e) {
+                    showNotification('Invalid QR code', 'error');
+                }
+            });
+            qrScanner.start();
+        }
+
+        function addPeer(data) {
+            const existing = peers.findIndex(p => p.name === data.name);
+            if (existing !== -1) peers[existing] = data;
+            else peers.push(data);
+            localStorage.setItem('crowd-nav-peers', JSON.stringify(peers));
+            updatePeerList();
+        }
+
+        function showPeerList() {
+            updatePeerList();
+            showModal('peer-modal');
+        }
+
+        function updatePeerList() {
+            const list = document.getElementById('peer-list');
+            list.innerHTML = '';
+            peers.forEach(peer => {
+                const div = document.createElement('div');
+                div.className = 'peer-item' + (selectedPeer && selectedPeer.name === peer.name ? ' selected' : '');
+                div.innerHTML = `<div style="font-weight: 600;">${peer.name}</div><div style="font-size: 10px; color: #94a3b8;">${peer.lat.toFixed(6)}, ${peer.lng.toFixed(6)}</div>`;
+                div.onclick = () => selectPeer(peer);
+                list.appendChild(div);
+            });
+        }
+
+        function selectPeer(peer) {
+            selectedPeer = peer;
+            updatePeerList();
+            updateCompass();
+            closeModal('peer-modal');
+            showNotification(`Selected: ${peer.name}`, 'info');
+        }
+
+        function updateCompass() {
+            if (!userLocation || !selectedPeer) return;
+            const bearing = calculateBearing(userLocation.lat, userLocation.lng, selectedPeer.lat, selectedPeer.lng);
+            const distance = calculateDistance(userLocation.lat, userLocation.lng, selectedPeer.lat, selectedPeer.lng);
+            document.getElementById('needle').style.transform = `translate(-50%, -100%) rotate(${bearing}deg)`;
+            document.getElementById('distance-info').textContent = `${selectedPeer.name}: ${distance < 1000 ? Math.round(distance) + 'm' : (distance/1000).toFixed(1) + 'km'}`;
+        }
+
+        function calculateBearing(lat1, lng1, lat2, lng2) {
+            const dLng = (lng2 - lng1) * Math.PI / 180;
+            const lat1Rad = lat1 * Math.PI / 180;
+            const lat2Rad = lat2 * Math.PI / 180;
+            const y = Math.sin(dLng) * Math.cos(lat2Rad);
+            const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) - Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLng);
+            return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+        }
+
+        function calculateDistance(lat1, lng1, lat2, lng2) {
+            const R = 6371000;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLng = (lng2 - lng1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng/2) * Math.sin(dLng/2);
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        function centerOnUser() {
+            if (userLocation) {
+                map.setView(userLocation, 15);
+                showNotification('Centered on your location', 'info');
+            }
+        }
+
+        function showModal(id) {
+            document.getElementById(id).classList.add('active');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+        }
+
+        function closeScanner() {
+            if (qrScanner) {
+                qrScanner.stop();
+                qrScanner = null;
+            }
+            closeModal('scanner-modal');
+        }
+
+        function showNotification(message, type) {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.className = `notification ${type}`;
+            notification.classList.add('show');
+            setTimeout(() => notification.classList.remove('show'), 3000);
+        }
+    </script>
+</body>
+</html>
