@@ -4,124 +4,32 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Offline Crowd Navigation</title>
-  <!-- Leaflet core (no integrity so no blocking errors) -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
-    :root{--bg:#0b1220;--card:#111a2b;--ink:#e6edf6;--muted:#9bb0c9;--accent:#35c98b;--danger:#ff6b6b}
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:system-ui,Segoe UI,Roboto,Inter,Helvetica,Arial;background:linear-gradient(180deg,var(--bg),#0c1222 60%,#0f1527);color:var(--ink);min-height:100vh}
-    .app{display:flex;flex-direction:column;min-height:100vh}
-    header{background:rgba(11,18,32,.9);backdrop-filter:blur(10px);border-bottom:1px solid #1e2a42;padding:1rem;position:sticky;top:0;z-index:1000}
-    .header-content{max-width:1200px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;gap:1rem}
-    .brand{display:flex;align-items:center;gap:.75rem}
-    .logo{width:40px;height:40px;background:#13233b;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px}
-    .brand h1{font-size:1.1rem;font-weight:700}
-    .subtitle{font-size:.8rem;color:var(--muted)}
-    .user-controls{display:flex;gap:.5rem;align-items:center}
-    .user-controls input{background:#0f1a2d;border:1px solid #24314a;border-radius:8px;color:var(--ink);padding:.5rem;width:150px}
-    .btn{background:#14243e;border:1px solid #233455;color:var(--ink);padding:.5rem 1rem;border-radius:8px;cursor:pointer;transition:all .2s;font-size:.9rem;display:inline-flex;align-items:center;gap:.5rem}
-    .btn:hover{transform:translateY(-1px);border-color:#3b5379}
-    .btn.accent{background:#1a3a31;border-color:#2f6c58;color:#d5ffe9}
-    .btn.danger{background:#3a1a1a;border-color:#6c2f2f;color:#ffe5e5}
-    main{flex:1;display:grid;grid-template-columns:1fr 320px;gap:1rem;padding:1rem;max-width:1200px;margin:0 auto;width:100%}
-    #map{height:70vh;min-height:420px;border-radius:12px;border:1px solid #1a2740}
-    .sidebar{display:flex;flex-direction:column;gap:1rem}
-    .panel{background:var(--card);border:1px solid #1b2a46;border-radius:12px;padding:1rem}
-    .panel h3{margin-bottom:1rem;font-size:1rem;color:var(--ink)}
-    .button-grid{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}
-    .button-grid .btn{justify-content:center;padding:.75rem .5rem;font-size:.85rem}
-    .stats{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}
-    .stat{text-align:center;padding:.75rem;background:#0f1a2d;border:1px solid #213353;border-radius:8px}
-    .stat-value{font-size:1.1rem;font-weight:bold;color:var(--accent)}
-    .stat-label{font-size:.8rem;color:var(--muted);margin-top:.25rem}
-    .compass{position:relative;width:120px;height:120px;margin:0 auto;background:#0c172a;border:2px solid #213353;border-radius:50%;display:flex;align-items:center;justify-content:center}
-    .compass-needle{position:absolute;width:3px;height:50px;background:var(--accent);transform-origin:bottom center;bottom:50%;border-radius:2px;transition:transform .15s ease}
-    .compass-text{position:absolute;bottom:-30px;left:50%;transform:translateX(-50%);font-size:.8rem;color:var(--muted);text-align:center;white-space:nowrap}
-    .peer-list{max-height:220px;overflow-y:auto}
-    .peer-item{background:#0e1930;border:1px solid #22365a;border-radius:8px;padding:.75rem;margin-bottom:.5rem;cursor:pointer;transition:all .2s}
-    .peer-item:hover{background:#12213a;border-color:#2a4066}
-    .peer-name{font-weight:bold;margin-bottom:.25rem}
-    .peer-info{font-size:.8rem;color:var(--muted)}
-    .modal{position:fixed;inset:0;background:rgba(2,6,14,.8);display:none;align-items:center;justify-content:center;padding:1rem;z-index:2000}
-    .modal.show{display:flex}
-    .modal-content{background:var(--card);border:1px solid #1b2a46;border-radius:12px;padding:1.5rem;max-width:420px;width:100%}
-    .modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem}
-    .modal-title{font-size:1.1rem;font-weight:bold}
-    .qr-container{text-align:center;padding:1rem;background:#0d182b;border:2px dashed #274167;border-radius:8px;margin:1rem 0}
-    #qr-canvas{max-width:100%;height:auto}
-    #video{width:100%;border-radius:8px}
-    .status-banner{background:#2c1b1b;border-bottom:1px solid #6c2f2f;color:#ffe5e5;padding:.75rem;text-align:center;display:none}
-    .status-banner.show{display:block}
-    @media (max-width:768px){main{grid-template-columns:1fr}.sidebar{order:-1}#map{height:55vh}.header-content{flex-direction:column;gap:.5rem}.button-grid{grid-template-columns:1fr}}
+    body { margin:0; font-family:sans-serif; background:#0b1220; color:#e6edf6; }
+    #map { height:60vh; }
+    .btn { padding:8px 12px; margin:4px; border:none; border-radius:6px; cursor:pointer; }
+    .accent{background:#35c98b;color:#fff}
+    .danger{background:#ff6b6b;color:#fff}
   </style>
 </head>
 <body>
-  <div class="app">
-    <div id="status-banner" class="status-banner"></div>
-    <header>
-      <div class="header-content">
-        <div class="brand">
-          <div class="logo">🧭</div>
-          <div>
-            <h1>Offline Crowd Navigation</h1>
-            <div class="subtitle">PWA-ready • Offline-ish maps • QR handoff</div>
-          </div>
-        </div>
-        <div class="user-controls">
-          <input type="text" id="username" placeholder="Your name" autocomplete="nickname" />
-          <button class="btn" id="saveNameBtn">Save</button>
-          <button class="btn" id="demoBtn">Demo Mode</button>
-          <button class="btn" id="compassBtn">Enable Compass</button>
-        </div>
-      </div>
-    </header>
-
-    <main>
-      <div id="map" role="application" aria-label="Map"></div>
-      <div class="sidebar">
-        <div class="panel">
-          <h3>Quick Actions</h3>
-          <div class="button-grid">
-            <button class="btn accent" id="shareBtn">📍 Share</button>
-            <button class="btn" id="scanBtn">📷 Scan</button>
-            <button class="btn" id="crumbBtn">🍞 Drop</button>
-            <button class="btn" id="trailBtn">🛤️ Trail</button>
-            <button class="btn danger" id="sosBtn">🚨 SOS</button>
-            <button class="btn" id="clearBtn">🗑️ Clear</button>
-          </div>
-        </div>
-        <div class="panel">
-          <h3>Navigation Compass</h3>
-          <div class="compass">
-            <div id="compass-needle" class="compass-needle"></div>
-            <div id="compass-text" class="compass-text">No target</div>
-          </div>
-        </div>
-        <div class="panel">
-          <h3>Status</h3>
-          <div class="stats">
-            <div class="stat"><div id="lat-value" class="stat-value">--</div><div class="stat-label">Latitude</div></div>
-            <div class="stat"><div id="lng-value" class="stat-value">--</div><div class="stat-label">Longitude</div></div>
-            <div class="stat"><div id="accuracy-value" class="stat-value">--</div><div class="stat-label">Accuracy</div></div>
-            <div class="stat"><div id="speed-value" class="stat-value">--</div><div class="stat-label">Speed</div></div>
-            <div class="stat"><div id="heading-value" class="stat-value">--</div><div class="stat-label">Heading</div></div>
-            <div class="stat"><div id="peer-count" class="stat-value">0</div><div class="stat-label">Peers</div></div>
-          </div>
-        </div>
-        <div class="panel">
-          <h3>Saved Peers</h3>
-          <div id="peer-list" class="peer-list"><div style="text-align:center;color:var(--muted)">No peers yet. Scan QR to add.</div></div>
-        </div>
-      </div>
-    </main>
+  <h2>🧭 Offline Crowd Navigation</h2>
+  <div>
+    <button class="btn accent" id="shareBtn">📍 Share</button>
+    <button class="btn" id="scanBtn">📷 Scan</button>
+    <button class="btn" id="crumbBtn">🍞 Drop</button>
+    <button class="btn" id="trailBtn">🛤️ Trail</button>
+    <button class="btn danger" id="sosBtn">🚨 SOS</button>
+    <button class="btn" id="clearBtn">🗑️ Clear</button>
   </div>
+  <div id="map"></div>
+  <div id="peer-list"></div>
 
-  <div id="modal" class="modal" aria-hidden="true">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3 id="modal-title" class="modal-title">Modal</h3>
-        <button class="btn" id="closeModalBtn">✕</button>
-      </div>
+  <!-- Modal -->
+  <div id="modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);align-items:center;justify-content:center;">
+    <div style="background:#111a2b;padding:20px;border-radius:8px;max-width:400px">
+      <button id="closeModalBtn">❌</button>
       <div id="modal-body"></div>
     </div>
   </div>
@@ -131,12 +39,94 @@
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 
-  <!-- main JS -->
   <script>
-    // === তোমার আগের JavaScript কোড 그대로 (initMap, updatePos, QR ইত্যাদি সব) ===
-    // আমি কেবল integrity মুছে দিয়েছি, বাকিটা untouched।
-    // (এখানে পুরো কোড paste করা যাবে কিন্তু জায়গা বাঁচাতে কমেন্ট দিলাম)
+    let map, userMarker, trailLine;
+    let trailCoords = [];
+    let peers = JSON.parse(localStorage.getItem("peers")||"[]");
+
+    function initMap(){
+      map = L.map("map").setView([23.81,90.41], 13); // ঢাকা default
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom:19,
+        attribution:"© OpenStreetMap"
+      }).addTo(map);
+    }
+
+    function updatePosition(){
+      if(!navigator.geolocation){ alert("Geolocation not supported"); return; }
+      navigator.geolocation.watchPosition(pos=>{
+        const {latitude, longitude} = pos.coords;
+        if(!userMarker){
+          userMarker = L.marker([latitude,longitude]).addTo(map).bindPopup("You are here");
+          map.setView([latitude,longitude],15);
+        } else {
+          userMarker.setLatLng([latitude,longitude]);
+        }
+        trailCoords.push([latitude,longitude]);
+        if(trailLine) trailLine.setLatLngs(trailCoords);
+      }, err=>{
+        console.error(err);
+      }, {enableHighAccuracy:true});
+    }
+
+    function renderPeers(){
+      const list=document.getElementById("peer-list");
+      list.innerHTML="";
+      if(peers.length===0){ list.innerHTML="<p style='color:gray'>No peers yet</p>"; return;}
+      peers.forEach(p=>{
+        const div=document.createElement("div");
+        div.textContent=p.name+" ("+p.lat.toFixed(4)+","+p.lng.toFixed(4)+")";
+        list.appendChild(div);
+      });
+    }
+
+    // === Button actions ===
+    document.getElementById("shareBtn").onclick=()=>{
+      if(!userMarker){alert("No location yet");return;}
+      const {lat,lng}=userMarker.getLatLng();
+      const data={name:"Peer",lat,lng};
+      const modal=document.getElementById("modal");
+      document.getElementById("modal-body").innerHTML="<div id='qrcode'></div>";
+      QRCode.toCanvas(document.createElement("canvas"), JSON.stringify(data),(err,canvas)=>{
+        if(!err) document.getElementById("qrcode").appendChild(canvas);
+      });
+      modal.style.display="flex";
+    };
+
+    document.getElementById("scanBtn").onclick=()=>{
+      alert("QR Scan feature requires camera setup (can be added)");
+    };
+
+    document.getElementById("crumbBtn").onclick=()=>{
+      if(!userMarker){alert("No location yet");return;}
+      const {lat,lng}=userMarker.getLatLng();
+      L.circleMarker([lat,lng],{radius:6,color:"yellow"}).addTo(map).bindPopup("Crumb");
+    };
+
+    document.getElementById("trailBtn").onclick=()=>{
+      if(trailLine){ map.removeLayer(trailLine); trailLine=null; return;}
+      trailLine=L.polyline(trailCoords,{color:"lime"}).addTo(map);
+    };
+
+    document.getElementById("sosBtn").onclick=()=>{
+      if(!userMarker){alert("No location yet");return;}
+      const {lat,lng}=userMarker.getLatLng();
+      L.marker([lat,lng],{icon:L.divIcon({html:"🚨",className:"",iconSize:[20,20]})}).addTo(map).bindPopup("SOS");
+    };
+
+    document.getElementById("clearBtn").onclick=()=>{
+      if(trailLine){map.removeLayer(trailLine);trailLine=null;}
+      trailCoords=[];
+    };
+
+    document.getElementById("closeModalBtn").onclick=()=>{
+      document.getElementById("modal").style.display="none";
+    };
+
+    // Init
+    initMap();
+    updatePosition();
+    renderPeers();
   </script>
 </body>
 </html>
-
